@@ -27,14 +27,14 @@ Training, prediction and export use this library's `TeachableMobileNet`, `loadTr
 - Copyright Stuart Knightley and contributors
 - License: MIT (dual-licensed MIT or GPLv3)
 
-## Material icons
+## Material icons (v1 only)
 
-- The inline SVG icon paths in `index.html` and `js/app.js` are from Google's Material Icons.
+- The inline SVG icon paths in `v1/index.html` and `v1/js/app.js` are from Google's Material Icons. The current version uses its own simple line icons.
 - License: Apache License 2.0
 
 ## Fonts (Google Fonts)
 
-- Poppins — SIL Open Font License 1.1
-- Roboto — SIL Open Font License 1.1
+- Plus Jakarta Sans (current version) — SIL Open Font License 1.1
+- Poppins and Roboto (v1) — SIL Open Font License 1.1
 
 "Teachable Machine" is a Google product name; this project is independent and not affiliated with Google.

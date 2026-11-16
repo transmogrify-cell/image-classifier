@@ -4,13 +4,19 @@ Train your own image classifier in the browser, the way Teachable Machine does: 
 
 **Live:** <https://transmogrify-cell.github.io/image-classifier/> (served by GitHub Pages from the `main` branch; every push redeploys it).
 
+## Versions
+
+| Version | Where | Notes |
+| --- | --- | --- |
+| v2 (current) | `/` | Simplified three-step layout (Collect, Train, Test) with light and dark mode. |
+| v1.0 | [`/v1/`](https://transmogrify-cell.github.io/image-classifier/v1/), git tag `v1.0` | The Teachable Machine-style layout, kept as a frozen copy in `v1/`. |
+
 ## Using it
 
-1. Name your classes (click the pencil) and add more with **Add a class**.
-2. Add at least 2 image samples to every class: **Webcam** then **Hold to Record**, or **Upload** (you can also drop images on a class).
-3. Click **Train Model**. Keep the tab open while it trains, because browsers pause background tabs.
-4. Test it in **Preview** with the webcam or an image file.
-5. **Export Model** downloads `my-image-model.zip` (`model.json`, `weights.bin`, `metadata.json`), the same format as a Teachable Machine image export.
+1. **Collect:** name each class (click its name) and add more with **Add a class**. Give every class at least 2 images: **Camera** then **Hold to record**, or **Upload** (you can also drop images on a class).
+2. **Train:** click **Train model**. Keep the tab open while it trains, because browsers pause background tabs. Epochs, batch size and learning rate are under **Settings**.
+3. **Test:** try it with **Camera** or **Image**.
+4. **Export model** downloads `my-image-model.zip` (`model.json`, `weights.bin`, `metadata.json`), the same format as a Teachable Machine image export.
 
 Everything runs on your device; images are never uploaded.
 
@@ -45,10 +51,11 @@ Then open <http://localhost:8000>.
 | `js/image-classifier.js` | Training, prediction and export (wraps the Teachable Machine library). |
 | `js/camera.js` | One shared webcam for recording samples and the preview. |
 | `js/app.js` | Classes, samples, training controls, preview and export dialog. |
-| `css/image-classifier.css` | Styles. |
+| `css/image-classifier.css` | Styles, with automatic light and dark mode. |
+| `v1/` | Frozen copy of version 1.0. |
 
 ## Credits
 
-Teachable Machine image library and TensorFlow.js (Apache-2.0), JSZip (MIT), Material icons (Apache-2.0), Poppins and Roboto fonts (OFL). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). This project is not affiliated with Google.
+Teachable Machine image library and TensorFlow.js (Apache-2.0), JSZip (MIT), Plus Jakarta Sans font (OFL); v1 also uses Material icons (Apache-2.0) and the Poppins and Roboto fonts (OFL). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). This project is not affiliated with Google.
 
 Implemented with the assistance of an AI assistant.

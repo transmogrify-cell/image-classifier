@@ -4,49 +4,42 @@ import { watchCamera, cameraSupported } from './camera.js';
 const MIN_SAMPLES = 2; // per class; the library holds back 15% (at least one) of each class for validation
 const RECORD_FPS = 24;
 const SAMPLE_SIZE = 224;
-const COLORS = ['#e8710a', '#e52592', '#9334e6', '#1a73e8', '#12b5cb', '#f9ab00', '#1e8e3e', '#d93025'];
-const CLOSE_ICON =
-  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>';
+const COLORS = ['#6366f1', '#f43f5e', '#f59e0b', '#10b981', '#0ea5e9', '#a855f7', '#f97316', '#14b8a6'];
+const REMOVE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 
-const workspace = $('.workspace');
-const connectors = $('.connectors');
 const classList = $('.class-list');
 const template = $('#class-template');
 const addClassButton = $('[data-action="add-class"]');
-const appMenu = $('.app-menu');
 
-const trainingCard = $('.training');
 const trainButton = $('[data-action="train"]');
 const trainStatus = $('.train-status');
-const trainFill = $('.train-progress-fill');
+const progressFill = $('.progress-fill');
 const trainDetail = $('.train-detail');
 const trainMessage = $('.train-message');
-const advancedToggle = $('.advanced-toggle');
-const advanced = $('#advanced');
 const epochsInput = $('#epochs');
 const batchSelect = $('#batch-size');
 const learningRateInput = $('#learning-rate');
 
-const previewCard = $('.preview');
+const previewPanel = $('.preview-panel');
 const exportButton = $('[data-action="export"]');
 const previewEmpty = $('.preview-empty');
 const previewLive = $('.preview-live');
-const inputToggle = $('.input-toggle');
-const switchText = $('.switch-text');
-const inputSource = $('.input-source');
+const sourceInputs = document.querySelectorAll('input[name="preview-source"]');
 const previewCanvas = $('.preview-canvas');
 const previewDrop = $('.preview-drop');
 const previewFile = $('.preview-file');
 const previewMessage = $('.preview-message');
+const verdictLabel = $('.verdict-label');
+const verdictScore = $('.verdict-score');
 const outputEl = $('.output');
 
 const exportDialog = $('.export-dialog');
 const snippetEl = $('.snippet code');
 
 const state = {
-  classes: [], // { id, name, samples: HTMLCanvasElement[], el }
+  classes: [], // { id, name, color, samples: HTMLCanvasElement[], el }
   nextId: 1,
   model: null,
   modelClassIds: [],
@@ -64,6 +57,12 @@ let outputRows = [];
 /* ---------- Helpers ---------- */
 
 const isFileDrag = (event) => Array.from(event.dataTransfer?.types || []).includes('Files');
+const previewSource = () => document.querySelector('input[name="preview-source"]:checked').value;
+const setPreviewSource = (value) => {
+  sourceInputs.forEach((input) => {
+    input.checked = input.value === value;
+  });
+};
 
 function decodeImage(file) {
   return new Promise((resolve, reject) => {
@@ -98,67 +97,63 @@ function closeMenus(except) {
   });
 }
 
-function toggleMenu(menu) {
-  closeMenus(menu);
-  menu.hidden = !menu.hidden;
-}
-
 /* ---------- Classes ---------- */
 
 function addClass() {
   if (state.training) return;
   const id = state.nextId++;
-  const cls = { id, name: `Class ${id}`, samples: [] };
+  const cls = { id, name: `Class ${id}`, color: COLORS[(id - 1) % COLORS.length], samples: [] };
   cls.el = buildClassCard(cls);
   classList.append(cls.el.root);
   state.classes.push(cls);
   structureChanged();
 }
 
-function sizeNameInput(input) {
-  input.size = Math.max(4, input.value.length + 1);
-}
-
 function buildClassCard(cls) {
   const root = template.content.firstElementChild.cloneNode(true);
+  root.style.setProperty('--class-color', cls.color);
   const el = {
     root,
     name: $('.class-name', root),
-    menu: $('.class-menu', root),
-    label: $('.samples-label', root),
+    count: $('.class-count', root),
+    menu: $('.menu', root),
     thumbs: $('.thumbs', root),
     message: $('.class-message', root),
-    panel: $('.webcam-panel', root),
-    view: $('.webcam-view', root),
+    panel: $('.camera-panel', root),
+    view: $('.camera-view', root),
     record: $('.record-button', root),
+    recordLabel: $('.record-label', root),
     input: $('.sample-input', root),
   };
 
   el.name.value = cls.name;
-  sizeNameInput(el.name);
-  el.name.addEventListener('input', () => sizeNameInput(el.name));
+  el.name.size = Math.max(4, cls.name.length + 1); // fallback where field-sizing isn't supported
+  el.name.addEventListener('input', () => {
+    el.name.size = Math.max(4, el.name.value.length + 1);
+  });
   el.name.addEventListener('change', () => renameClass(cls, el.name.value));
   el.name.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') el.name.blur();
     if (event.key === 'Escape') {
       el.name.value = cls.name;
-      sizeNameInput(el.name);
       el.name.blur();
     }
   });
 
   root.addEventListener('click', (event) => {
     const command = event.target.closest('[data-cmd]')?.dataset.cmd;
+    if (command === 'menu') {
+      closeMenus(el.menu);
+      el.menu.hidden = !el.menu.hidden;
+      return;
+    }
+    if (['rename', 'clear', 'delete'].includes(command)) closeMenus();
     if (command === 'rename') {
       el.name.focus();
       el.name.select();
-    } else if (command === 'menu') {
-      toggleMenu(el.menu);
     } else if (command === 'clear') {
-      closeMenus();
       clearSamples(cls);
     } else if (command === 'delete') {
-      closeMenus();
       deleteClass(cls);
     } else if (command === 'webcam') {
       openSampleCamera(cls);
@@ -174,21 +169,21 @@ function buildClassCard(cls) {
     el.input.value = '';
   });
 
-  // Hold to Record: mouse, touch or keyboard (Space / Enter).
+  // Hold to record: mouse, touch or keyboard (Space / Enter).
   const startRecording = () => {
     if (!sampleCamera || sampleCamera.cls !== cls || state.training) return;
     sampleCamera.recording = true;
     el.record.classList.add('is-recording');
-    el.record.textContent = 'Recording…';
+    el.recordLabel.textContent = 'Recording…';
   };
   const stopRecording = () => {
     if (sampleCamera?.cls === cls) sampleCamera.recording = false;
     el.record.classList.remove('is-recording');
-    el.record.textContent = 'Hold to Record';
+    el.recordLabel.textContent = 'Hold to record';
   };
   el.record.addEventListener('pointerdown', (event) => {
     event.preventDefault();
-    el.record.setPointerCapture(event.pointerId);
+    el.record.setPointerCapture?.(event.pointerId);
     startRecording();
   });
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((type) => el.record.addEventListener(type, stopRecording));
@@ -226,11 +221,10 @@ function renameClass(cls, value) {
   const name = value.trim();
   if (!name) {
     cls.el.name.value = cls.name;
-    sizeNameInput(cls.el.name);
     return;
   }
   cls.name = name;
-  // Renaming only changes the label, so a trained model can keep working.
+  // Renaming only changes the label, so a trained model keeps working.
   const index = state.classes.indexOf(cls);
   if (modelIsCurrent()) {
     state.model.setLabel(index, name);
@@ -244,16 +238,15 @@ function deleteClass(cls) {
     cls.el.message.textContent = 'You need at least one class.';
     return;
   }
-  if (cls.samples.length && !window.confirm(`Delete "${cls.name}" and its ${cls.samples.length} samples?`)) return;
+  if (cls.samples.length && !window.confirm(`Delete "${cls.name}" and its ${cls.samples.length} images?`)) return;
   if (sampleCamera?.cls === cls) closeSampleCamera();
   cls.el.root.remove();
   state.classes.splice(state.classes.indexOf(cls), 1);
   structureChanged();
 }
 
-function updateSampleLabel(cls) {
-  const count = cls.samples.length;
-  cls.el.label.textContent = count ? `${count} Image Sample${count === 1 ? '' : 's'}` : 'Add Image Samples:';
+function updateCount(cls) {
+  cls.el.count.textContent = cls.samples.length;
 }
 
 function addSample(cls, canvas) {
@@ -263,19 +256,19 @@ function addSample(cls, canvas) {
   const remove = document.createElement('button');
   remove.type = 'button';
   remove.className = 'thumb-remove';
-  remove.setAttribute('aria-label', 'Remove sample');
-  remove.innerHTML = CLOSE_ICON;
+  remove.setAttribute('aria-label', 'Remove image');
+  remove.innerHTML = REMOVE_ICON;
   remove.addEventListener('click', () => {
     if (state.training) return;
     cls.samples.splice(cls.samples.indexOf(canvas), 1);
     thumb.remove();
-    updateSampleLabel(cls);
+    updateCount(cls);
     samplesChanged();
   });
   thumb.append(canvas, remove);
   cls.el.thumbs.append(thumb);
   cls.el.thumbs.scrollTop = cls.el.thumbs.scrollHeight;
-  updateSampleLabel(cls);
+  updateCount(cls);
   samplesChanged();
 }
 
@@ -284,7 +277,7 @@ function clearSamples(cls) {
   cls.samples = [];
   cls.el.thumbs.replaceChildren();
   cls.el.message.textContent = '';
-  updateSampleLabel(cls);
+  updateCount(cls);
   samplesChanged();
 }
 
@@ -303,18 +296,19 @@ async function addFiles(cls, files) {
       failed++;
     }
   }
-  cls.el.message.textContent = failed ? `${failed} file${failed === 1 ? " wasn't" : "s weren't"} added because ${failed === 1 ? "it isn't" : "they aren't"} a readable image.` : '';
+  cls.el.message.textContent = failed
+    ? `${failed} file${failed === 1 ? " wasn't" : "s weren't"} added because ${failed === 1 ? "it isn't" : "they aren't"} a readable image.`
+    : '';
 }
 
-/* ---------- Sample webcam ---------- */
+/* ---------- Sample camera ---------- */
 
 async function openSampleCamera(cls) {
-  if (sampleCamera?.cls === cls) return;
+  if (sampleCamera?.cls === cls || state.training) return;
   closeSampleCamera();
   const { el } = cls;
   el.message.textContent = '';
   el.panel.hidden = false;
-  el.root.classList.add('is-recording-panel');
   const context = el.view.getContext('2d');
   const session = { cls, recording: false, last: 0, unsubscribe: null };
   sampleCamera = session;
@@ -337,7 +331,6 @@ async function openSampleCamera(cls) {
     if (sampleCamera === session) {
       sampleCamera = null;
       el.panel.hidden = true;
-      el.root.classList.remove('is-recording-panel');
     }
     el.message.textContent = `${error.message} You can still add images with Upload.`;
   }
@@ -349,7 +342,6 @@ function closeSampleCamera() {
   sampleCamera = null;
   cls.el.stopRecording();
   cls.el.panel.hidden = true;
-  cls.el.root.classList.remove('is-recording-panel');
   unsubscribe?.();
 }
 
@@ -362,7 +354,7 @@ function modelIsCurrent() {
 function trainingProblem() {
   if (state.classes.length < 2) return 'Add at least two classes to train a model.';
   const short = state.classes.find((cls) => cls.samples.length < MIN_SAMPLES);
-  if (short) return `Add at least ${MIN_SAMPLES} image samples to "${short.name}".`;
+  if (short) return `Add at least ${MIN_SAMPLES} images to "${short.name}".`;
   return null;
 }
 
@@ -372,17 +364,17 @@ function setTrainMessage(message, kind = 'info') {
 }
 
 function updateTrainButton() {
-  trainButton.classList.remove('is-ready');
+  trainButton.classList.remove('is-done');
   if (state.training) {
     trainButton.textContent = 'Training…';
     trainButton.disabled = true;
   } else if (modelIsCurrent() && !state.dirty) {
-    trainButton.textContent = 'Model Trained';
+    trainButton.textContent = 'Model trained';
+    trainButton.classList.add('is-done');
     trainButton.disabled = true;
   } else {
-    trainButton.textContent = 'Train Model';
+    trainButton.textContent = modelIsCurrent() ? 'Retrain model' : 'Train model';
     trainButton.disabled = false;
-    if (!trainingProblem()) trainButton.classList.add('is-ready');
   }
   exportButton.disabled = !modelIsCurrent() || state.training;
   addClassButton.disabled = state.training;
@@ -397,11 +389,10 @@ function samplesChanged() {
 function structureChanged() {
   if (state.model && !modelIsCurrent()) discardModel();
   samplesChanged();
-  scheduleConnectors();
 }
 
 function setProgress(fraction, text) {
-  trainFill.style.width = `${Math.round(fraction * 100)}%`;
+  progressFill.style.width = `${Math.round(fraction * 100)}%`;
   trainDetail.textContent = text;
 }
 
@@ -436,15 +427,15 @@ async function train() {
   updateTrainButton();
   setTrainMessage('');
   trainStatus.hidden = false;
-  setProgress(0, 'Preparing training data…');
+  setProgress(0, 'Preparing images…');
 
   let lastLogs = null;
   try {
     const model = await trainClassifier(classes, settings, {
-      onPrepare: (done, count) => setProgress((done / count) * 0.2, `Preparing training data: ${done} / ${count}`),
+      onPrepare: (done, count) => setProgress((done / count) * 0.2, `Preparing images · ${done} of ${count}`),
       onEpoch: (epoch, epochs, logs) => {
         lastLogs = logs;
-        setProgress(0.2 + (epoch / epochs) * 0.8, `Epoch ${epoch} / ${epochs}. Keep this tab open.`);
+        setProgress(0.2 + (epoch / epochs) * 0.8, `Epoch ${epoch} of ${epochs} · keep this tab open`);
       },
     });
     if (state.model) disposeClassifier(state.model);
@@ -453,7 +444,8 @@ async function train() {
     state.dirty = false;
     const accuracy = lastLogs && (lastLogs.val_acc ?? lastLogs.val_accuracy);
     setTrainMessage(
-      `Trained on ${total} samples.` + (typeof accuracy === 'number' ? ` Accuracy on held-back samples: ${Math.round(accuracy * 100)}%.` : '')
+      `Trained on ${total} images` + (typeof accuracy === 'number' ? ` · ${Math.round(accuracy * 100)}% accurate on images it hadn't seen` : ''),
+      'success'
     );
   } catch (error) {
     console.error(error);
@@ -476,39 +468,45 @@ function discardModel() {
   state.modelClassIds = [];
   previewLive.hidden = true;
   previewEmpty.hidden = false;
-  scheduleConnectors();
 }
 
 function buildOutputRows() {
-  outputRows = state.classes.map((cls, index) => {
+  outputRows = state.classes.map((cls) => {
     const row = document.createElement('div');
     row.className = 'output-row';
-    row.style.setProperty('--class-color', COLORS[index % COLORS.length]);
+    row.style.setProperty('--class-color', cls.color);
+    const dot = document.createElement('span');
+    dot.className = 'output-dot';
     const name = document.createElement('span');
     name.className = 'output-name';
     name.textContent = cls.name;
+    const value = document.createElement('span');
+    value.className = 'output-value';
+    value.textContent = '0%';
     const bar = document.createElement('span');
     bar.className = 'output-bar';
     const fill = document.createElement('span');
     fill.className = 'output-fill';
-    const value = document.createElement('span');
-    value.className = 'output-value';
-    value.textContent = '0%';
-    bar.append(fill, value);
-    row.append(name, bar);
-    return { row, name, fill, value };
+    bar.append(fill);
+    row.append(dot, name, value, bar);
+    return { row, name, value, fill };
   });
   outputEl.replaceChildren(...outputRows.map(({ row }) => row));
+  verdictLabel.textContent = '';
 }
 
 function renderPredictions(predictions) {
+  let top = 0;
   predictions.forEach(({ probability }, index) => {
+    if (probability > predictions[top].probability) top = index;
     const row = outputRows[index];
     if (!row) return;
     row.fill.style.width = `${probability * 100}%`;
     row.value.textContent = `${Math.round(probability * 100)}%`;
-    row.value.classList.toggle('is-low', probability < 0.15); // keep small values readable on the pale track
   });
+  outputRows.forEach((row, index) => row.row.classList.toggle('is-top', index === top));
+  verdictLabel.textContent = outputRows[top]?.name.textContent ?? '';
+  verdictScore.textContent = `${Math.round(predictions[top].probability * 100)}% sure`;
 }
 
 function setPreviewMessage(message, kind = 'info') {
@@ -525,11 +523,10 @@ function startPreview() {
   previewLive.hidden = false;
   buildOutputRows();
   if (!cameraSupported) {
-    inputSource.value = 'file';
-    inputSource.querySelector('[value="webcam"]').disabled = true;
+    setPreviewSource('file');
+    $('input[name="preview-source"][value="webcam"]').disabled = true;
   }
   applyPreviewInput();
-  scheduleConnectors();
 }
 
 function stopPreviewInput() {
@@ -540,26 +537,26 @@ function stopPreviewInput() {
 
 async function applyPreviewInput() {
   stopPreviewInput();
-  switchText.textContent = inputToggle.checked ? 'ON' : 'OFF';
   setPreviewMessage('');
   previewDrop.hidden = true;
-  if (!modelIsCurrent() || !inputToggle.checked) {
+  if (!modelIsCurrent()) {
     clearPreviewCanvas();
     return;
   }
 
-  if (inputSource.value === 'file') {
+  if (previewSource() === 'file') {
     if (previewImage) classifyPreviewImage(previewImage);
     else {
       clearPreviewCanvas();
       previewDrop.hidden = false;
+      verdictLabel.textContent = '';
     }
     return;
   }
 
   const token = {};
   previewToken = token;
-  setPreviewMessage('Starting webcam…');
+  setPreviewMessage('Starting camera…');
   const context = previewCanvas.getContext('2d');
   try {
     const unsubscribe = await watchCamera((frame) => {
@@ -580,7 +577,7 @@ async function applyPreviewInput() {
     previewUnsubscribe = unsubscribe;
     setPreviewMessage('');
   } catch (error) {
-    if (previewToken === token) setPreviewMessage(`${error.message} Switch the input to File to test with images.`, 'error');
+    if (previewToken === token) setPreviewMessage(`${error.message} Switch to Image to test with a file.`, 'error');
   }
 }
 
@@ -664,46 +661,14 @@ async function downloadModel(button) {
     window.alert("The model couldn't be exported. Try again.");
   } finally {
     button.disabled = false;
-    button.textContent = 'Download my model';
+    button.textContent = 'Download model';
   }
-}
-
-/* ---------- Connectors between cards ---------- */
-
-let connectorFrame = 0;
-function scheduleConnectors() {
-  cancelAnimationFrame(connectorFrame);
-  connectorFrame = requestAnimationFrame(drawConnectors);
-}
-
-function drawConnectors() {
-  if (getComputedStyle(connectors).display === 'none') return;
-  const base = workspace.getBoundingClientRect();
-  const training = trainingCard.getBoundingClientRect();
-  const preview = previewCard.getBoundingClientRect();
-  const targetX = training.left - base.left;
-  const targetY = training.top - base.top + training.height / 2;
-  const paths = state.classes.map(({ el }) => {
-    const card = el.root.getBoundingClientRect();
-    const x = card.right - base.left;
-    const y = card.top - base.top + card.height / 2;
-    const bend = (targetX - x) / 2;
-    return `M${x},${y} C${x + bend},${y} ${targetX - bend},${targetY} ${targetX},${targetY}`;
-  });
-  paths.push(`M${training.right - base.left},${targetY} L${preview.left - base.left},${preview.top - base.top + preview.height / 2}`);
-  connectors.innerHTML = paths.map((d) => `<path d="${d}"/>`).join('');
 }
 
 /* ---------- Events ---------- */
 
 addClassButton.addEventListener('click', addClass);
 trainButton.addEventListener('click', train);
-
-advancedToggle.addEventListener('click', () => {
-  const expanded = advancedToggle.getAttribute('aria-expanded') !== 'true';
-  advancedToggle.setAttribute('aria-expanded', String(expanded));
-  advanced.hidden = !expanded;
-});
 
 document.querySelectorAll('[data-step]').forEach((button) => {
   button.addEventListener('click', () => {
@@ -716,34 +681,31 @@ document.querySelectorAll('[data-step]').forEach((button) => {
 
 $('[data-action="reset-settings"]').addEventListener('click', () => writeSettings(DEFAULT_SETTINGS));
 
-inputToggle.addEventListener('change', applyPreviewInput);
-inputSource.addEventListener('change', applyPreviewInput);
+sourceInputs.forEach((input) => input.addEventListener('change', applyPreviewInput));
 previewDrop.addEventListener('click', () => previewFile.click());
 previewCanvas.addEventListener('click', () => {
-  if (inputSource.value === 'file' && inputToggle.checked) previewFile.click();
+  if (previewSource() === 'file') previewFile.click();
 });
 previewFile.addEventListener('change', () => {
   previewFromFile(previewFile.files[0]);
   previewFile.value = '';
 });
-previewCard.addEventListener('dragover', (event) => {
+previewPanel.addEventListener('dragover', (event) => {
   if (!isFileDrag(event) || !modelIsCurrent()) return;
   event.preventDefault();
-  previewCard.classList.add('is-drop-target');
+  previewPanel.classList.add('is-drop-target');
 });
-previewCard.addEventListener('dragleave', (event) => {
-  if (!previewCard.contains(event.relatedTarget)) previewCard.classList.remove('is-drop-target');
+previewPanel.addEventListener('dragleave', (event) => {
+  if (!previewPanel.contains(event.relatedTarget)) previewPanel.classList.remove('is-drop-target');
 });
-previewCard.addEventListener('drop', (event) => {
+previewPanel.addEventListener('drop', (event) => {
   if (!isFileDrag(event) || !modelIsCurrent()) return;
   event.preventDefault();
   event.stopPropagation();
-  previewCard.classList.remove('is-drop-target');
-  if (inputSource.value !== 'file' || !inputToggle.checked) {
-    inputSource.value = 'file';
-    inputToggle.checked = true;
+  previewPanel.classList.remove('is-drop-target');
+  if (previewSource() !== 'file') {
+    setPreviewSource('file');
     stopPreviewInput();
-    switchText.textContent = 'ON';
   }
   previewFromFile(event.dataTransfer.files[0]);
 });
@@ -773,12 +735,10 @@ exportDialog.addEventListener('click', (event) => {
   }
 });
 
-$('[data-action="menu"]').addEventListener('click', () => toggleMenu(appMenu));
 $('[data-action="new-project"]').addEventListener('click', () => {
-  closeMenus();
   if (state.training) return;
   const hasWork = state.classes.some((cls) => cls.samples.length) || state.model;
-  if (hasWork && !window.confirm('Start a new project? Your classes, samples and trained model will be removed.')) return;
+  if (hasWork && !window.confirm('Start a new project? Your classes, images and trained model will be removed.')) return;
   closeSampleCamera();
   if (state.model) discardModel();
   state.classes.forEach((cls) => cls.el.root.remove());
@@ -791,15 +751,11 @@ $('[data-action="new-project"]').addEventListener('click', () => {
 });
 
 document.addEventListener('click', (event) => {
-  if (!event.target.closest('.menu, [data-action="menu"], [data-cmd="menu"]')) closeMenus();
+  if (!event.target.closest('.menu, [data-cmd="menu"]')) closeMenus();
 });
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeMenus();
 });
-
-new ResizeObserver(scheduleConnectors).observe(workspace);
-[classList, trainingCard, previewCard].forEach((element) => new ResizeObserver(scheduleConnectors).observe(element));
-window.addEventListener('resize', scheduleConnectors);
 
 /* ---------- Start ---------- */
 
