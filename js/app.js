@@ -38,6 +38,12 @@ const outputEl = $('.output');
 const exportDialog = $('.export-dialog');
 const snippetEl = $('.snippet code');
 
+const columnsEl = $('.columns');
+const wires = $('.wires');
+const wireLayer = $('.wire-layer');
+const wireGradient = $('#wire-gold');
+const trainPanel = $('.train-panel');
+
 const state = {
   classes: [], // { id, name, color, samples: HTMLCanvasElement[], el }
   nextId: 1,
@@ -378,6 +384,7 @@ function updateTrainButton() {
   }
   exportButton.disabled = !modelIsCurrent() || state.training;
   addClassButton.disabled = state.training;
+  scheduleWires();
 }
 
 function samplesChanged() {
@@ -665,6 +672,50 @@ async function downloadModel(button) {
   }
 }
 
+/* ---------- Golden flow wires ---------- */
+
+// Class cards → Train → Test. A wire flows once its class has enough images;
+// Train → Test flows once a model is trained; everything speeds up while training.
+let wireFrame = 0;
+function scheduleWires() {
+  cancelAnimationFrame(wireFrame);
+  wireFrame = requestAnimationFrame(drawWires);
+}
+
+function drawWires() {
+  if (getComputedStyle(wires).display === 'none') return;
+  const box = columnsEl.getBoundingClientRect();
+  const train = trainPanel.getBoundingClientRect();
+  const test = previewPanel.getBoundingClientRect();
+  const joinX = train.left - box.left;
+  const joinY = train.top - box.top + Math.min(train.height / 2, 44);
+
+  const segments = state.classes.map((cls) => {
+    const card = cls.el.root.getBoundingClientRect();
+    const x = card.right - box.left;
+    const y = card.top - box.top + Math.min(card.height / 2, 60);
+    const bend = Math.max(20, (joinX - x) * 0.6);
+    return { d: `M${x},${y} C${x + bend},${y} ${joinX - bend},${joinY} ${joinX},${joinY}`, from: [x, y], active: cls.samples.length >= MIN_SAMPLES };
+  });
+  const outX = train.right - box.left;
+  const inX = test.left - box.left;
+  const trained = modelIsCurrent();
+  segments.push({ d: `M${outX},${joinY} L${inX},${joinY}`, from: [outX, joinY], to: [inX, joinY], active: trained });
+
+  const anyInput = segments.slice(0, -1).some((segment) => segment.active);
+  const port = ([x, y], active) => `<circle class="wire-port${active ? ' is-active' : ''}" cx="${x}" cy="${y}" r="5"/>`;
+  const markup = segments.map(({ d, active }) => {
+    const on = active ? ' is-active' : '';
+    return `<path class="wire-base${on}" d="${d}"/><path class="wire-flow${on}" d="${d}"${active ? ' filter="url(#wire-glow)"' : ''}/>`;
+  });
+  segments.forEach((segment) => markup.push(port(segment.from, segment.active)));
+  markup.push(port([joinX, joinY], anyInput), port([inX, joinY], trained));
+
+  wireGradient.setAttribute('x2', String(Math.max(1, box.width)));
+  wires.classList.toggle('is-training', state.training);
+  wireLayer.innerHTML = markup.join('');
+}
+
 /* ---------- Events ---------- */
 
 addClassButton.addEventListener('click', addClass);
@@ -756,6 +807,10 @@ document.addEventListener('click', (event) => {
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeMenus();
 });
+
+[columnsEl, classList, trainPanel, previewPanel].forEach((element) => new ResizeObserver(scheduleWires).observe(element));
+window.addEventListener('resize', scheduleWires);
+document.fonts?.ready.then(scheduleWires);
 
 /* ---------- Start ---------- */
 

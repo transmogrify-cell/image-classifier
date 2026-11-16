@@ -26,6 +26,21 @@
       </section>
 
       <div class="columns">
+        <svg class="wires" aria-hidden="true">
+          <defs>
+            <linearGradient id="wire-gold" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1000" y2="0">
+              <stop offset="0" style="stop-color: var(--gold-deep)" />
+              <stop offset="0.5" style="stop-color: var(--gold-light)" />
+              <stop offset="1" style="stop-color: var(--gold)" />
+            </linearGradient>
+            <filter id="wire-glow" x="-20%" y="-50%" width="140%" height="200%">
+              <feGaussianBlur stdDeviation="2.2" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
+          <g class="wire-layer"></g>
+        </svg>
+
         <section class="column" aria-labelledby="step-collect">
           <div class="step">
             <span class="step-number">1</span>
@@ -129,7 +144,7 @@
     </main>
 
     <footer class="footer">
-      <p>Runs on your device with TensorFlow.js and the open-source Teachable Machine image library. <a href="v1/">Classic layout</a></p>
+      <p><a href="v1/">Classic layout</a></p>
     </footer>
 
     <dialog class="export-dialog" aria-labelledby="export-title">
