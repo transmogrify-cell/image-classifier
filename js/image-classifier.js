@@ -1,14 +1,21 @@
 /**
- * Image classification engine for Teachable Machine image models.
+ * Image classification engine.
  *
- * A thin wrapper around the official Teachable Machine image library
- * (@teachablemachine/image, from github.com/googlecreativelab/teachablemachine-community,
- * Apache-2.0), loaded as the global `tmImage` by index.html.
+ * Runs ConvNeXt V2 Base (Meta AI, Apache-2.0), fine-tuned on ImageNet-22k then
+ * ImageNet-1k (1,000 everyday categories), entirely in the browser through
+ * Transformers.js (Hugging Face, Apache-2.0). The 8-bit model (~91 MB) is
+ * downloaded once from the Hugging Face Hub and then cached by the browser.
  *
- * The library does the model-specific preprocessing inside `model.predict()`:
- * it centre-crops the input to a square, resizes it to the model's image size
- * (224px), optionally converts it to grayscale, and normalises pixels to [-1, 1].
+ * Preprocessing (resize, centre crop to 224 px, ImageNet normalisation) comes
+ * from the model's own preprocessor_config.json and is applied by the pipeline.
  */
+import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2';
+
+export const MODEL = {
+  id: 'Xenova/convnextv2-base-22k-224',
+  name: 'ConvNeXt V2 Base',
+  dtype: 'q8',
+};
 
 export class ModelLoadError extends Error {
   constructor(message) {
@@ -17,95 +24,62 @@ export class ModelLoadError extends Error {
   }
 }
 
-// One load per model URL; every caller shares the same promise.
-const modelCache = new Map();
+let classifierPromise = null;
+const progressListeners = new Set();
 
-function withTrailingSlash(url) {
-  return url.endsWith('/') ? url : `${url}/`;
-}
-
-async function fetchMetadata(url) {
-  let response;
+async function createClassifier() {
+  let classifier;
   try {
-    response = await fetch(url);
-  } catch {
-    throw new ModelLoadError(
-      `Could not reach ${url}. If you opened this page straight from the file system, serve it from a web server instead.`
-    );
-  }
-  if (!response.ok) {
-    throw new ModelLoadError(
-      `No model found: ${url} returned HTTP ${response.status}. Add your exported model.json, metadata.json and weights.bin to the model folder.`
-    );
-  }
-
-  let metadata;
-  try {
-    metadata = await response.json();
-  } catch {
-    throw new ModelLoadError('metadata.json is not valid JSON.');
-  }
-  if (!Array.isArray(metadata.labels) || metadata.labels.length === 0) {
-    throw new ModelLoadError('metadata.json lists no class labels. Is this a Teachable Machine image model?');
-  }
-  return metadata;
-}
-
-async function loadFromUrl(baseUrl) {
-  if (!window.tf || !window.tmImage) {
-    throw new ModelLoadError('The TensorFlow.js libraries did not load. Check your internet connection and reload.');
-  }
-
-  const metadata = await fetchMetadata(`${baseUrl}metadata.json`);
-
-  let model;
-  try {
-    model = await window.tmImage.load(`${baseUrl}model.json`, metadata);
+    classifier = await pipeline('image-classification', MODEL.id, {
+      dtype: MODEL.dtype,
+      progress_callback: (info) => {
+        if (info.status === 'progress_total') {
+          progressListeners.forEach((listener) => listener(info.loaded, info.total));
+        }
+      },
+    });
   } catch (error) {
-    throw new ModelLoadError(
-      `Could not load the model from ${baseUrl}. Check that model.json and weights.bin are both there and come from the same export. (${error.message})`
-    );
+    console.error(error);
+    throw new ModelLoadError("Couldn't download the model. Check your internet connection and try again.");
   }
 
-  const outputCount = model.getTotalClasses();
-  if (outputCount !== metadata.labels.length) {
-    model.model.dispose();
-    throw new ModelLoadError(
-      `The model has ${outputCount} outputs but metadata.json lists ${metadata.labels.length} labels. Re-export both files together.`
-    );
-  }
-
-  // Warm-up run: the first prediction compiles GPU shaders, so do it while "Loading model…" is shown.
+  // Warm-up run so the first real photo isn't slowed by one-off setup work.
   const blank = document.createElement('canvas');
   blank.width = blank.height = 224;
-  await model.predict(blank);
-
-  return model;
+  await classifier(blank, { top_k: 1 });
+  return classifier;
 }
 
 /**
- * Loads a Teachable Machine image model from a folder URL that contains
- * model.json, metadata.json and weights.bin. Cached: repeated calls reuse the
- * loaded model, and a failed load is retried on the next call.
+ * Loads the model once and shares it. onProgress(loadedBytes, totalBytes) is
+ * called while files download. A failed load is retried on the next call.
  */
-export function loadModel(modelUrl) {
-  const baseUrl = withTrailingSlash(modelUrl);
-  if (!modelCache.has(baseUrl)) {
-    const loading = loadFromUrl(baseUrl);
-    loading.catch(() => modelCache.delete(baseUrl));
-    modelCache.set(baseUrl, loading);
+export function loadClassifier(onProgress) {
+  if (onProgress) progressListeners.add(onProgress);
+  if (!classifierPromise) {
+    classifierPromise = createClassifier();
+    classifierPromise.catch(() => {
+      classifierPromise = null;
+    });
   }
-  return modelCache.get(baseUrl);
+  return classifierPromise;
+}
+
+// ImageNet labels list synonyms ("Pembroke, Pembroke Welsh corgi"). Use the first,
+// or a longer synonym that contains it when that is clearer ("Pembroke Welsh corgi").
+function tidyLabel(label) {
+  const [first, ...synonyms] = label.split(',').map((part) => part.trim());
+  const fuller = synonyms.find((name) => name.length > first.length && name.toLowerCase().includes(first.toLowerCase()));
+  const name = fuller || first;
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 /**
- * Classifies an image, canvas or video frame.
- * Resolves to one { className, probability } entry per class, in label order.
+ * Classifies a Blob/File or canvas. Resolves to the top `topK`
+ * { label, score } results, highest score first.
  */
-export function classify(model, source) {
-  return model.predict(source);
-}
-
-export function topPrediction(predictions) {
-  return predictions.reduce((best, current) => (current.probability > best.probability ? current : best));
+export async function classifyImage(source, topK = 5) {
+  const classifier = await loadClassifier();
+  const results = await classifier(source, { top_k: topK });
+  return results.map(({ label, score }) => ({ label: tidyLabel(label), score }));
 }

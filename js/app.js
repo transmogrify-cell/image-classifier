@@ -1,164 +1,74 @@
-import { loadModel, classify, topPrediction } from './image-classifier.js';
+import { loadClassifier, classifyImage, ModelLoadError } from './image-classifier.js';
 
 const root = document.getElementById('image-classifier');
-const modelUrl = root.dataset.modelUrl || './model/';
-
-const statusEl = root.querySelector('.ic-status');
-const fileInput = root.querySelector('.ic-file-input');
+const fileInput = root.querySelector('.file-input');
 const uploadButton = root.querySelector('[data-action="upload"]');
-const webcamButton = root.querySelector('[data-action="webcam"]');
-const scanner = root.querySelector('.ic-scanner');
-const preview = root.querySelector('.ic-preview');
-const resultEl = root.querySelector('.ic-result');
-const topLabelEl = root.querySelector('.ic-top-label');
-const topScoreEl = root.querySelector('.ic-top-score');
-const scoresEl = root.querySelector('.ic-scores');
-const tickerTracks = root.querySelectorAll('.ic-ticker-track');
+const cameraButton = root.querySelector('[data-action="camera"]');
+const captureButton = root.querySelector('[data-action="capture"]');
+const cancelCameraButton = root.querySelector('[data-action="camera-cancel"]');
+const preview = root.querySelector('.preview');
+const placeholder = root.querySelector('.placeholder');
+const cameraControls = root.querySelector('.camera-controls');
+const progressEl = root.querySelector('.progress');
+const progressFill = root.querySelector('.progress-fill');
+const progressDetail = root.querySelector('.progress-detail');
+const statusEl = root.querySelector('.status');
+const resultEl = root.querySelector('.result');
+const captionEl = root.querySelector('.result-caption');
+const labelEl = root.querySelector('.result-label');
+const confidenceEl = root.querySelector('.result-confidence');
+const listEl = root.querySelector('.result-list');
 
-const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const TOP_K = 5;
+const CONFIDENT = 0.6; // below this the answer is labelled a "best guess"
+const MAX_SIDE = 1024; // photos are scaled down to this before classifying; the model works at 224 px
 
-// The webcam setup follows the Teachable Machine image library's sample
-// snippet (Apache-2.0), including its iOS workaround for frozen video.
-const isIos = /iPhone|iPad/.test(navigator.userAgent);
-const WEBCAM_SIZE = 224;
-const CONFIDENT = 0.9;
-
-let model = null;
-let webcam = null;
-let webcamFrame = 0;
+let modelReady = false;
+let busy = false;
+let stream = null;
 let previewUrl = null;
-let scoreRows = [];
-let shownTopLabel = null;
-let shownPercent = 0;
-let counterFrame = 0;
+
+/* ---------- Status and model loading ---------- */
 
 function setStatus(message, kind = 'info') {
   statusEl.textContent = message;
   statusEl.dataset.kind = kind;
 }
 
-function setBusy(busy) {
-  uploadButton.disabled = busy;
-  webcamButton.disabled = busy;
-  root.classList.toggle('is-busy', busy);
+function setControlsDisabled(disabled) {
+  uploadButton.disabled = disabled;
+  cameraButton.disabled = disabled;
+  captureButton.disabled = disabled;
 }
 
-// Restarts a CSS animation by removing and re-adding its class.
-function replayAnimation(element, className) {
-  element.classList.remove(className);
-  void element.offsetWidth;
-  element.classList.add(className);
-}
-
-function fillTickers(words) {
-  const run = words.map((word) => `${word} ✺ `).join('');
-  const half = run.repeat(Math.max(2, Math.ceil(160 / run.length)));
-  tickerTracks.forEach((track) => {
-    track.textContent = half + half; // two identical halves loop seamlessly
-    track.style.animationDuration = `${half.length * 0.22}s`;
-  });
+function showDownloadProgress(loaded, total) {
+  progressEl.hidden = false;
+  progressFill.style.width = `${total ? (loaded / total) * 100 : 0}%`;
+  progressDetail.textContent = `${Math.round(loaded / 1e6)} MB of ${Math.round(total / 1e6)} MB`;
 }
 
 async function ensureModel() {
-  if (!model) {
-    setStatus('Loading model…', 'loading');
-    model = await loadModel(modelUrl);
-    buildScoreRows(model.getClassLabels());
-    fillTickers(model.getClassLabels());
+  if (modelReady) return;
+  root.classList.add('is-loading');
+  progressEl.hidden = false;
+  try {
+    await loadClassifier(showDownloadProgress);
+    modelReady = true;
+  } finally {
+    root.classList.remove('is-loading');
+    progressEl.hidden = true;
   }
-  return model;
 }
 
-// One row per class, built once per model so live webcam updates only touch widths and text.
-function buildScoreRows(labels) {
-  scoresEl.replaceChildren();
-  scoreRows = labels.map((label, index) => {
-    const item = document.createElement('li');
-    item.className = 'ic-score';
-
-    const rank = document.createElement('span');
-    rank.className = 'ic-score-rank';
-    rank.textContent = String(index + 1).padStart(2, '0');
-
-    const name = document.createElement('span');
-    name.className = 'ic-score-name';
-    name.textContent = label;
-
-    const value = document.createElement('span');
-    value.className = 'ic-score-value';
-
-    const bar = document.createElement('span');
-    bar.className = 'ic-score-bar';
-    bar.setAttribute('aria-hidden', 'true');
-    const fill = document.createElement('span');
-    fill.className = 'ic-score-fill';
-    bar.append(fill);
-
-    item.append(rank, name, value, bar);
-    scoresEl.append(item);
-    return { item, fill, value };
-  });
-}
-
-function formatPercent(probability) {
-  return `${(probability * 100).toFixed(1)}%`;
-}
-
-// Counts the big percentage up to its new value; jumps straight there for live webcam frames.
-function showTopPercent(probability, immediate) {
-  const target = probability * 100;
-  cancelAnimationFrame(counterFrame);
-  topScoreEl.setAttribute('aria-label', formatPercent(probability));
-
-  if (immediate || reducedMotion.matches) {
-    shownPercent = target;
-    topScoreEl.textContent = formatPercent(probability);
-    return;
-  }
-
-  const from = shownPercent;
-  topScoreEl.textContent = `${from.toFixed(1)}%`;
-  const start = performance.now();
-  const step = (now) => {
-    const progress = Math.min(1, (now - start) / 700);
-    shownPercent = from + (target - from) * (1 - (1 - progress) ** 3);
-    topScoreEl.textContent = `${shownPercent.toFixed(1)}%`;
-    if (progress < 1) counterFrame = requestAnimationFrame(step);
-  };
-  counterFrame = requestAnimationFrame(step);
-}
-
-function renderResults(predictions, { live = false } = {}) {
-  const top = topPrediction(predictions);
-
-  if (top.className !== shownTopLabel) {
-    shownTopLabel = top.className;
-    topLabelEl.textContent = top.className;
-    topLabelEl.dataset.text = top.className;
-    replayAnimation(topLabelEl, 'is-glitching');
-    if (top.probability >= CONFIDENT) replayAnimation(resultEl, 'is-sure');
-  }
-  showTopPercent(top.probability, live);
-
-  predictions.forEach((prediction, index) => {
-    const row = scoreRows[index];
-    row.fill.style.width = `${prediction.probability * 100}%`;
-    row.value.textContent = formatPercent(prediction.probability);
-    row.item.classList.toggle('is-top', prediction === top);
-  });
-  resultEl.hidden = false;
-}
-
-function clearResults() {
-  resultEl.hidden = true;
-  shownTopLabel = null;
-  shownPercent = 0;
-  cancelAnimationFrame(counterFrame);
-}
+/* ---------- Preview ---------- */
 
 function showInPreview(element) {
   preview.replaceChildren(element);
-  preview.classList.add('has-content');
+}
+
+function resetPreview() {
+  releasePreviewUrl();
+  preview.replaceChildren(placeholder);
 }
 
 function releasePreviewUrl() {
@@ -172,7 +82,7 @@ function decodeImage(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const image = new Image();
-    image.alt = 'Uploaded image';
+    image.alt = 'Your photo';
     image.onload = () => resolve({ image, url });
     image.onerror = () => {
       URL.revokeObjectURL(url);
@@ -182,12 +92,103 @@ function decodeImage(file) {
   });
 }
 
+// Draws an image or video frame onto a canvas, scaled down if it is very large.
+function toCanvas(source, width, height) {
+  const scale = Math.min(1, MAX_SIDE / Math.max(width, height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const context = canvas.getContext('2d');
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+/* ---------- Results ---------- */
+
+function formatPercent(score) {
+  const percent = Math.round(score * 100);
+  return percent < 1 ? '<1%' : `${percent}%`;
+}
+
+function clearResult() {
+  resultEl.hidden = true;
+  root.classList.remove('has-result');
+}
+
+function renderResult(results) {
+  const [top] = results;
+  captionEl.textContent = top.score >= CONFIDENT ? 'Looks like' : 'Best guess';
+  labelEl.textContent = top.label;
+  confidenceEl.textContent = `${formatPercent(top.score)} confident`;
+
+  const fills = [];
+  listEl.replaceChildren(
+    ...results.map(({ label, score }) => {
+      const item = document.createElement('li');
+      item.className = 'result-item';
+
+      const name = document.createElement('span');
+      name.className = 'result-name';
+      name.textContent = label;
+
+      const value = document.createElement('span');
+      value.className = 'result-score';
+      value.textContent = formatPercent(score);
+
+      const bar = document.createElement('span');
+      bar.className = 'result-bar';
+      bar.setAttribute('aria-hidden', 'true');
+      const fill = document.createElement('span');
+      fill.className = 'result-bar-fill';
+      bar.append(fill);
+      fills.push([fill, score]);
+
+      item.append(name, value, bar);
+      return item;
+    })
+  );
+
+  resultEl.hidden = false;
+  root.classList.add('has-result');
+  void listEl.offsetWidth; // start bars at 0 so they animate to their value
+  fills.forEach(([fill, score]) => {
+    fill.style.width = `${score * 100}%`;
+  });
+
+  // On narrow screens the answer sits below the photo; bring it into view.
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  resultEl.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest' });
+}
+
+/* ---------- Classify ---------- */
+
+async function classify(canvas) {
+  busy = true;
+  setControlsDisabled(true);
+  clearResult();
+  try {
+    await ensureModel();
+    setStatus('Analysing…', 'working');
+    renderResult(await classifyImage(canvas, TOP_K));
+    setStatus('');
+  } catch (error) {
+    console.error(error);
+    setStatus(
+      error instanceof ModelLoadError ? error.message : "Something went wrong analysing this photo. Try another one.",
+      'error'
+    );
+  } finally {
+    busy = false;
+    setControlsDisabled(false);
+  }
+}
+
 async function handleFile(file) {
-  if (!file) return;
-  stopWebcam();
+  if (!file || busy) return;
 
   if (file.type && !file.type.startsWith('image/')) {
-    setStatus(`"${file.name}" is not an image. Choose a JPG, PNG, WebP or GIF file.`, 'error');
+    setStatus(`"${file.name}" isn't an image. Choose a JPEG, PNG, WebP or GIF.`, 'error');
     return;
   }
 
@@ -195,104 +196,87 @@ async function handleFile(file) {
   try {
     decoded = await decodeImage(file);
   } catch {
-    setStatus(`Couldn't read "${file.name}". The file may be damaged or in a format this browser can't open.`, 'error');
+    setStatus(`"${file.name}" couldn't be opened. It may be damaged or in a format this browser doesn't support.`, 'error');
     return;
   }
 
+  stopCamera();
   releasePreviewUrl();
   previewUrl = decoded.url;
-  clearResults();
-  // Preview a copy: the TM library crops using element.width/height, which become
-  // the CSS size once an <img> is in the page, so the classified image stays off-DOM.
-  showInPreview(decoded.image.cloneNode());
-  replayAnimation(scanner, 'is-scanning');
+  showInPreview(decoded.image);
 
-  setBusy(true);
-  try {
-    const loadedModel = await ensureModel();
-    setStatus('Classifying…', 'loading');
-    renderResults(await classify(loadedModel, decoded.image));
-    setStatus('');
-  } catch (error) {
-    setStatus(error.message, 'error');
-  } finally {
-    setBusy(false);
-  }
+  const { image } = decoded;
+  await classify(toCanvas(image, image.naturalWidth || 512, image.naturalHeight || 512));
 }
 
-async function startWebcam() {
-  setBusy(true);
-  let loadedModel;
+/* ---------- Camera ---------- */
+
+async function startCamera() {
+  if (busy || stream) return;
   try {
-    loadedModel = await ensureModel();
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
+      audio: false,
+    });
   } catch (error) {
-    setStatus(error.message, 'error');
-    setBusy(false);
+    const messages = {
+      NotAllowedError: 'Camera access is blocked. Allow it in your browser settings to take a photo.',
+      NotFoundError: 'No camera was found on this device.',
+    };
+    setStatus(messages[error.name] || "The camera couldn't be started.", 'error');
     return;
   }
 
-  setStatus('Starting webcam…', 'loading');
-  const camera = new window.tmImage.Webcam(WEBCAM_SIZE, WEBCAM_SIZE, true);
-  try {
-    await camera.setup();
-    if (isIos) {
-      camera.webcam.setAttribute('playsinline', '');
-      camera.webcam.muted = true;
-    }
-    await camera.play();
-  } catch (error) {
-    if (camera.webcam && camera.webcam.srcObject) camera.stop();
-    // The library rejects with plain strings for camera errors.
-    setStatus(typeof error === 'string' ? error : 'Could not start the webcam.', 'error');
-    setBusy(false);
-    return;
-  }
-
+  const video = document.createElement('video');
+  video.playsInline = true;
+  video.muted = true;
+  video.srcObject = stream;
   releasePreviewUrl();
-  clearResults();
-  showInPreview(isIos ? camera.webcam : camera.canvas);
-  webcam = camera;
-  root.classList.add('is-live');
-  webcamButton.textContent = 'Stop webcam';
-  setStatus('Live');
-  setBusy(false);
-
-  const frameSource = isIos ? camera.webcam : camera.canvas;
-  const loop = async () => {
-    if (webcam !== camera) return;
-    camera.update();
-    const predictions = await classify(loadedModel, frameSource);
-    if (webcam !== camera) return;
-    renderResults(predictions, { live: true });
-    webcamFrame = requestAnimationFrame(loop);
-  };
-  webcamFrame = requestAnimationFrame(loop);
-}
-
-function stopWebcam() {
-  if (!webcam) return;
-  cancelAnimationFrame(webcamFrame);
-  webcam.stop();
-  webcam = null;
-  root.classList.remove('is-live');
-  webcamButton.textContent = 'Use webcam';
-  preview.replaceChildren();
-  preview.classList.remove('has-content');
-  clearResults();
+  showInPreview(video);
+  clearResult();
   setStatus('');
+  root.classList.add('is-camera');
+  cameraControls.hidden = false;
+  await video.play().catch(() => {});
+
+  ensureModel().catch(() => {}); // get the model ready while the photo is framed
 }
+
+function stopCamera() {
+  if (!stream) return;
+  stream.getTracks().forEach((track) => track.stop());
+  stream = null;
+  root.classList.remove('is-camera');
+  cameraControls.hidden = true;
+}
+
+async function capturePhoto() {
+  const video = preview.querySelector('video');
+  if (!video || !video.videoWidth || busy) return;
+  const canvas = toCanvas(video, video.videoWidth, video.videoHeight);
+  stopCamera();
+  showInPreview(canvas);
+  await classify(canvas);
+}
+
+/* ---------- Events ---------- */
 
 uploadButton.addEventListener('click', () => fileInput.click());
-scanner.addEventListener('click', () => {
-  if (!webcam && !uploadButton.disabled) fileInput.click();
+preview.addEventListener('click', () => {
+  if (!stream && !busy) fileInput.click();
 });
 fileInput.addEventListener('change', () => {
   handleFile(fileInput.files[0]);
   fileInput.value = ''; // allow choosing the same file again
 });
-webcamButton.addEventListener('click', () => (webcam ? stopWebcam() : startWebcam()));
 
-// Drop an image anywhere on the page.
+cameraButton.addEventListener('click', startCamera);
+captureButton.addEventListener('click', capturePhoto);
+cancelCameraButton.addEventListener('click', () => {
+  stopCamera();
+  resetPreview();
+});
+
 const isFileDrag = (event) => Array.from(event.dataTransfer?.types || []).includes('Files');
 window.addEventListener('dragover', (event) => {
   if (!isFileDrag(event)) return;
@@ -306,30 +290,25 @@ window.addEventListener('drop', (event) => {
   if (!isFileDrag(event)) return;
   event.preventDefault();
   root.classList.remove('is-dragging');
-  if (!uploadButton.disabled) handleFile(event.dataTransfer.files[0]);
+  handleFile(event.dataTransfer.files[0]);
 });
 
-// Background glow follows the pointer.
-if (!reducedMotion.matches) {
-  window.addEventListener(
-    'pointermove',
-    (event) => {
-      document.body.style.setProperty('--mx', `${event.clientX}px`);
-      document.body.style.setProperty('--my', `${event.clientY}px`);
-    },
-    { passive: true }
-  );
-}
+window.addEventListener('paste', (event) => {
+  const item = Array.from(event.clipboardData?.items || []).find((entry) => entry.type.startsWith('image/'));
+  if (item) handleFile(item.getAsFile());
+});
+
+/* ---------- Start ---------- */
 
 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-  webcamButton.hidden = true;
+  cameraButton.hidden = true;
 }
 
-fillTickers(['Upload', 'Webcam', 'Classify']);
+if (!/Mac|iPhone|iPad/.test(navigator.platform)) {
+  root.querySelector('.placeholder-hint kbd').textContent = 'Ctrl';
+}
 
-// Start loading straight away so the first prediction is fast.
-setBusy(true);
-ensureModel()
-  .then((loadedModel) => setStatus(`Model ready: ${loadedModel.getClassLabels().length} classes`))
-  .catch((error) => setStatus(error.message, 'error'))
-  .finally(() => setBusy(false));
+// Download the model straight away unless the visitor has asked to save data.
+if (!navigator.connection?.saveData) {
+  ensureModel().catch((error) => setStatus(error.message, 'error'));
+}

@@ -1,24 +1,19 @@
 # Third-party notices
 
-This project loads the following libraries at runtime from the jsDelivr CDN. Their code is not copied into this repository.
+These are loaded at runtime and are not copied into this repository.
 
-## @teachablemachine/image 0.8.5
+## ConvNeXt V2 Base (model weights)
 
-- Source: <https://github.com/googlecreativelab/teachablemachine-community/tree/master/libraries/image>
-- Copyright 2019 Google LLC
+- Original model: <https://huggingface.co/facebook/convnextv2-base-22k-224> (Meta AI), fine-tuned on ImageNet-22k then ImageNet-1k
+- Browser (ONNX) version used: <https://huggingface.co/Xenova/convnextv2-base-22k-224>, 8-bit quantized
 - License: Apache License 2.0 — <https://www.apache.org/licenses/LICENSE-2.0>
+- Paper: Woo et al., "ConvNeXt V2: Co-designing and Scaling ConvNets with Masked Autoencoders", 2023
 
-The webcam setup in `js/app.js` (including the iOS `playsinline` workaround) follows the sample snippet in that library's README.
+The model was trained on ImageNet. Check ImageNet's own terms if you plan commercial use.
 
-## @tensorflow/tfjs 1.3.1
+## Transformers.js 4.3.2
 
-- Source: <https://github.com/tensorflow/tfjs>
-- Copyright Google LLC
+- Source: <https://github.com/huggingface/transformers.js>, loaded from jsDelivr
+- Copyright Hugging Face
 - License: Apache License 2.0 — <https://www.apache.org/licenses/LICENSE-2.0>
-
-## Fonts (Google Fonts)
-
-- Unbounded — SIL Open Font License 1.1 — <https://fonts.google.com/specimen/Unbounded>
-- JetBrains Mono — SIL Open Font License 1.1 — <https://fonts.google.com/specimen/JetBrains+Mono>
-
-Teachable Machine (the hosted service at teachablemachine.withgoogle.com), its trademarks and its site assets are not covered by these licenses and are not used here.
+- Bundles ONNX Runtime Web (Microsoft, MIT License)
