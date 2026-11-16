@@ -1,19 +1,40 @@
 # Third-party notices
 
-These are loaded at runtime and are not copied into this repository.
+These are loaded at runtime from CDNs and are not copied into this repository, except where noted.
 
-## ConvNeXt V2 Base (model weights)
+## @teachablemachine/image 0.8.5
 
-- Original model: <https://huggingface.co/facebook/convnextv2-base-22k-224> (Meta AI), fine-tuned on ImageNet-22k then ImageNet-1k
-- Browser (ONNX) version used: <https://huggingface.co/Xenova/convnextv2-base-22k-224>, 8-bit quantized
+- Source: <https://github.com/googlecreativelab/teachablemachine-community/tree/master/libraries/image>
+- Copyright 2019 Google LLC
 - License: Apache License 2.0 — <https://www.apache.org/licenses/LICENSE-2.0>
-- Paper: Woo et al., "ConvNeXt V2: Co-designing and Scaling ConvNets with Masked Autoencoders", 2023
 
-The model was trained on ImageNet. Check ImageNet's own terms if you plan commercial use.
+Training, prediction and export use this library's `TeachableMobileNet`, `loadTruncatedMobileNet` and `Webcam`. The usage snippet shown in the export dialog is adapted from the sample in that library's README.
 
-## Transformers.js 4.3.2
+## MobileNet V2 weights (alpha 0.35, 224 px)
 
-- Source: <https://github.com/huggingface/transformers.js>, loaded from jsDelivr
-- Copyright Hugging Face
-- License: Apache License 2.0 — <https://www.apache.org/licenses/LICENSE-2.0>
-- Bundles ONNX Runtime Web (Microsoft, MIT License)
+- Downloaded at training time by the library above from Google's `teachable-machine-models` storage bucket, as Teachable Machine does.
+- Pre-trained on ImageNet.
+
+## @tensorflow/tfjs 1.3.1
+
+- Source: <https://github.com/tensorflow/tfjs>
+- Copyright Google LLC
+- License: Apache License 2.0
+
+## JSZip 3.10.1
+
+- Source: <https://github.com/Stuk/jszip>
+- Copyright Stuart Knightley and contributors
+- License: MIT (dual-licensed MIT or GPLv3)
+
+## Material icons
+
+- The inline SVG icon paths in `index.html` and `js/app.js` are from Google's Material Icons.
+- License: Apache License 2.0
+
+## Fonts (Google Fonts)
+
+- Poppins — SIL Open Font License 1.1
+- Roboto — SIL Open Font License 1.1
+
+"Teachable Machine" is a Google product name; this project is independent and not affiliated with Google.

@@ -1,85 +1,125 @@
 /**
- * Image classification engine.
+ * Training, prediction and export, using the Teachable Machine image library
+ * (@teachablemachine/image, github.com/googlecreativelab/teachablemachine-community,
+ * Apache-2.0), loaded as the global `tmImage`, on TensorFlow.js (global `tf`).
  *
- * Runs ConvNeXt V2 Base (Meta AI, Apache-2.0), fine-tuned on ImageNet-22k then
- * ImageNet-1k (1,000 everyday categories), entirely in the browser through
- * Transformers.js (Hugging Face, Apache-2.0). The 8-bit model (~91 MB) is
- * downloaded once from the Hugging Face Hub and then cached by the browser.
+ * Architecture (the library's own TeachableMobileNet, unchanged):
+ *   image → centre crop + resize to 224×224, pixels scaled to [-1, 1]
+ *         → MobileNet V2 (alpha 0.35, ImageNet weights, frozen), cut at `out_relu`
+ *         → global average pooling → 1,280 features
+ *         → Dense(100, ReLU) → Dense(classes, softmax)   ← the only layers trained
  *
- * Preprocessing (resize, centre crop to 224 px, ImageNet normalisation) comes
- * from the model's own preprocessor_config.json and is applied by the pipeline.
+ * The library's code defaults to MobileNet V1; V2/0.35 is used here because
+ * that is what Teachable Machine's own exported image models contain, so
+ * models exported from this page load anywhere a Teachable Machine model does.
  */
-import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2';
 
-export const MODEL = {
-  id: 'Xenova/convnextv2-base-22k-224',
-  name: 'ConvNeXt V2 Base',
-  dtype: 'q8',
-};
+export const BASE_MODEL = { version: 2, alpha: 0.35 };
+export const DEFAULT_SETTINGS = { epochs: 50, batchSize: 16, learningRate: 0.001 };
+const DENSE_UNITS = 100; // hidden layer size Teachable Machine uses
 
-export class ModelLoadError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'ModelLoadError';
+let basePromise = null;
+
+// The frozen MobileNet feature extractor, downloaded once (~2 MB) and reused for every training run.
+function loadBaseModel() {
+  if (!basePromise) {
+    basePromise = window.tmImage.loadTruncatedMobileNet(BASE_MODEL);
+    basePromise.catch(() => {
+      basePromise = null;
+    });
   }
+  return basePromise;
 }
 
-let classifierPromise = null;
-const progressListeners = new Set();
+/**
+ * Trains a classifier on the given classes.
+ * classes: [{ name, samples: HTMLCanvasElement[] }] (224×224 canvases)
+ * hooks: onPrepare(done, total), onEpoch(epoch, totalEpochs, logs)
+ * Resolves to a trained TeachableMobileNet.
+ */
+export async function trainClassifier(classes, settings, hooks = {}) {
+  if (!window.tf || !window.tmImage) {
+    throw new Error('The TensorFlow.js libraries did not load. Check your internet connection and reload.');
+  }
 
-async function createClassifier() {
-  let classifier;
+  let base;
   try {
-    classifier = await pipeline('image-classification', MODEL.id, {
-      dtype: MODEL.dtype,
-      progress_callback: (info) => {
-        if (info.status === 'progress_total') {
-          progressListeners.forEach((listener) => listener(info.loaded, info.total));
-        }
-      },
-    });
-  } catch (error) {
-    console.error(error);
-    throw new ModelLoadError("Couldn't download the model. Check your internet connection and try again.");
+    base = await loadBaseModel();
+  } catch {
+    throw new Error("Couldn't download MobileNet. Check your internet connection and try again.");
   }
 
-  // Warm-up run so the first real photo isn't slowed by one-off setup work.
-  const blank = document.createElement('canvas');
-  blank.width = blank.height = 224;
-  await classifier(blank, { top_k: 1 });
-  return classifier;
+  const labels = classes.map((item) => item.name);
+  const model = new window.tmImage.TeachableMobileNet(base, {
+    labels,
+    modelName: 'my-image-model',
+    tfjsVersion: window.tf.version.tfjs,
+    imageSize: 224,
+  });
+  model.setLabels(labels);
+
+  // Feature extraction: each sample goes through MobileNet once; only its 1,280 features are kept.
+  const total = classes.reduce((sum, item) => sum + item.samples.length, 0);
+  let done = 0;
+  for (let index = 0; index < classes.length; index++) {
+    for (const sample of classes[index].samples) {
+      await model.addExample(index, sample);
+      done++;
+      if (done % 10 === 0 || done === total) {
+        hooks.onPrepare?.(done, total);
+        await new Promise((resolve) => setTimeout(resolve, 0)); // let the page repaint; unlike tf.nextFrame this keeps going in background tabs
+      }
+    }
+  }
+
+  await model.train(
+    {
+      denseUnits: DENSE_UNITS,
+      epochs: settings.epochs,
+      learningRate: settings.learningRate,
+      batchSize: settings.batchSize,
+    },
+    {
+      onEpochEnd: (epoch, logs) => hooks.onEpoch?.(epoch + 1, settings.epochs, logs),
+    }
+  );
+  return model;
+}
+
+/** Confidence for every class, in class order: [{ className, probability }]. */
+export function predict(model, source) {
+  return model.predict(source);
+}
+
+/** Frees the trained head. The shared MobileNet base is kept for the next run. */
+export function disposeClassifier(model) {
+  model?.trainingModel?.dispose();
 }
 
 /**
- * Loads the model once and shares it. onProgress(loadedBytes, totalBytes) is
- * called while files download. A failed load is retried on the next call.
+ * Packs the trained model the way Teachable Machine's "Download" export does:
+ * a zip with model.json, weights.bin and metadata.json.
  */
-export function loadClassifier(onProgress) {
-  if (onProgress) progressListeners.add(onProgress);
-  if (!classifierPromise) {
-    classifierPromise = createClassifier();
-    classifierPromise.catch(() => {
-      classifierPromise = null;
-    });
-  }
-  return classifierPromise;
-}
+export async function exportClassifier(model) {
+  let artifacts;
+  await model.save(
+    window.tf.io.withSaveHandler(async (saved) => {
+      artifacts = saved;
+      return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: 'JSON' } };
+    })
+  );
 
-// ImageNet labels list synonyms ("Pembroke, Pembroke Welsh corgi"). Use the first,
-// or a longer synonym that contains it when that is clearer ("Pembroke Welsh corgi").
-function tidyLabel(label) {
-  const [first, ...synonyms] = label.split(',').map((part) => part.trim());
-  const fuller = synonyms.find((name) => name.length > first.length && name.toLowerCase().includes(first.toLowerCase()));
-  const name = fuller || first;
-  return name.charAt(0).toUpperCase() + name.slice(1);
-}
+  const modelJson = {
+    modelTopology: artifacts.modelTopology,
+    format: artifacts.format,
+    generatedBy: artifacts.generatedBy,
+    convertedBy: artifacts.convertedBy,
+    weightsManifest: [{ paths: ['./weights.bin'], weights: artifacts.weightSpecs }],
+  };
 
-/**
- * Classifies a Blob/File or canvas. Resolves to the top `topK`
- * { label, score } results, highest score first.
- */
-export async function classifyImage(source, topK = 5) {
-  const classifier = await loadClassifier();
-  const results = await classifier(source, { top_k: topK });
-  return results.map(({ label, score }) => ({ label: tidyLabel(label), score }));
+  const zip = new window.JSZip();
+  zip.file('model.json', JSON.stringify(modelJson));
+  zip.file('weights.bin', artifacts.weightData);
+  zip.file('metadata.json', JSON.stringify(model.getMetadata()));
+  return zip.generateAsync({ type: 'blob' });
 }

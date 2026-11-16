@@ -3,102 +3,201 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Find out what's in a photo. Image recognition that runs entirely in your browser." />
-    <title>Image Classifier</title>
+    <meta name="description" content="Train an image model in your browser: add classes, collect samples, train and test it live." />
+    <title>Image Trainer</title>
     <link rel="icon" href="data:," />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Roboto:wght@400;500&display=swap" />
     <link rel="stylesheet" href="css/image-classifier.css" />
   </head>
   <body>
-    <nav class="nav">
-      <div class="nav-inner">
-        <span class="nav-title">Image Classifier</span>
+    <header class="app-header">
+      <button type="button" class="icon-button" data-action="menu" aria-label="Menu" aria-haspopup="true">
+        <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" /></svg>
+      </button>
+      <span class="app-title">Image Trainer</span>
+      <div class="menu app-menu" hidden>
+        <button type="button" data-action="new-project">New project</button>
       </div>
-    </nav>
+    </header>
 
-    <main id="image-classifier" class="ic">
-      <section class="hero">
-        <p class="eyebrow">On-device image recognition</p>
-        <h1 class="headline">What's in your photo?</h1>
-        <p class="lead">Drop in a picture and get an answer in a moment. It recognises a thousand everyday things, right in your browser.</p>
-        <div class="actions">
-          <button type="button" class="button" data-action="upload">Choose Photo</button>
-          <button type="button" class="link" data-action="camera">Use Camera</button>
-          <input type="file" class="file-input" accept="image/*" hidden />
-        </div>
+    <main class="workspace">
+      <svg class="connectors" aria-hidden="true"></svg>
+
+      <section class="classes" aria-label="Classes">
+        <div class="class-list"></div>
+        <button type="button" class="add-class" data-action="add-class">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-8-2h2v-4h4v-2h-4V7h-2v4H7v2h4z" /></svg>
+          Add a class
+        </button>
       </section>
 
-      <section class="workspace" aria-label="Classifier">
-        <div class="stage">
-          <div class="preview" aria-label="Photo preview">
-            <div class="placeholder">
-              <svg class="placeholder-icon" viewBox="0 0 48 48" aria-hidden="true">
-                <rect x="5" y="9" width="38" height="30" rx="6" />
-                <circle cx="17" cy="20" r="4" />
-                <path d="M7 35l11-10 8 7 6-5 10 8" />
-              </svg>
-              <p class="placeholder-title">Drop a photo here</p>
-              <p class="placeholder-hint">or paste one with <kbd>⌘</kbd><kbd>V</kbd></p>
+      <div class="pipeline">
+        <section class="card training" aria-labelledby="training-title">
+          <h2 id="training-title" class="card-title">Training</h2>
+          <button type="button" class="train-button" data-action="train">Train Model</button>
+          <div class="train-status" hidden>
+            <div class="train-progress"><span class="train-progress-fill"></span></div>
+            <p class="train-detail"></p>
+          </div>
+          <p class="train-message" role="status" aria-live="polite"></p>
+
+          <button type="button" class="advanced-toggle" aria-expanded="true" aria-controls="advanced">
+            Advanced
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z" /></svg>
+          </button>
+          <div id="advanced" class="advanced">
+            <div class="setting">
+              <label for="epochs">Epochs:</label>
+              <div class="stepper">
+                <input id="epochs" type="number" min="1" max="1000" step="1" />
+                <span class="stepper-buttons">
+                  <button type="button" data-step="epochs:1" aria-label="More epochs">▲</button>
+                  <button type="button" data-step="epochs:-1" aria-label="Fewer epochs">▼</button>
+                </span>
+              </div>
+              <span class="help" tabindex="0" data-tip="One epoch means every training sample has gone through the model once. More epochs can help, but too many can make the model memorise your samples.">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" /></svg>
+              </span>
+            </div>
+            <div class="setting">
+              <label for="batch-size">Batch Size:</label>
+              <div class="select-box">
+                <select id="batch-size">
+                  <option>16</option><option>32</option><option>64</option><option>128</option><option>256</option><option>512</option>
+                </select>
+              </div>
+              <span class="help" tabindex="0" data-tip="How many samples the model looks at in each training step.">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" /></svg>
+              </span>
+            </div>
+            <div class="setting setting--stacked">
+              <label for="learning-rate">Learning Rate:</label>
+              <div class="stepper">
+                <input id="learning-rate" type="number" min="0.00001" max="1" step="0.0001" />
+                <span class="stepper-buttons">
+                  <button type="button" data-step="learning-rate:0.0001" aria-label="Higher learning rate">▲</button>
+                  <button type="button" data-step="learning-rate:-0.0001" aria-label="Lower learning rate">▼</button>
+                </span>
+              </div>
+              <span class="help" tabindex="0" data-tip="How big each training adjustment is. Small changes here can have a big effect.">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" /></svg>
+              </span>
+            </div>
+            <button type="button" class="row-button" data-action="reset-settings">
+              Reset Defaults
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" /></svg>
+            </button>
+          </div>
+        </section>
+
+        <section class="card preview" aria-labelledby="preview-title">
+          <div class="preview-head">
+            <h2 id="preview-title" class="card-title">Preview</h2>
+            <button type="button" class="gray-button" data-action="export" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4v2h14V4H5zm0 10h4v6h6v-6h4l-7-7-7 7z" /></svg>
+              Export Model
+            </button>
+          </div>
+          <div class="preview-body">
+            <p class="preview-empty">You must train a model on the left before you can preview it here.</p>
+            <div class="preview-live" hidden>
+              <div class="input-row">
+                <span class="input-label">Input</span>
+                <label class="switch">
+                  <input type="checkbox" class="input-toggle" checked />
+                  <span class="switch-track"></span>
+                  <span class="switch-text">ON</span>
+                </label>
+                <div class="select-box select-box--small">
+                  <select class="input-source" aria-label="Input source">
+                    <option value="webcam">Webcam</option>
+                    <option value="file">File</option>
+                  </select>
+                </div>
+              </div>
+              <div class="preview-view">
+                <canvas class="preview-canvas" width="224" height="224"></canvas>
+                <button type="button" class="preview-drop" hidden>Choose an image, or drop one here</button>
+              </div>
+              <input type="file" class="preview-file" accept="image/*" hidden />
+              <p class="preview-message" role="status" aria-live="polite"></p>
+              <h3 class="output-title">Output</h3>
+              <div class="output"></div>
             </div>
           </div>
-          <div class="camera-controls" hidden>
-            <button type="button" class="camera-cancel" data-action="camera-cancel">Cancel</button>
-            <button type="button" class="shutter" data-action="capture" aria-label="Take photo"></button>
-          </div>
-          <div class="drop-overlay" aria-hidden="true">Drop to classify</div>
-        </div>
-
-        <div class="answer">
-          <div class="progress" hidden>
-            <p class="progress-label">Downloading model</p>
-            <div class="progress-track"><span class="progress-fill"></span></div>
-            <p class="progress-detail"></p>
-          </div>
-
-          <p class="status" role="status" aria-live="polite"></p>
-
-          <div class="result" hidden>
-            <p class="result-caption"></p>
-            <h2 class="result-label"></h2>
-            <p class="result-confidence"></p>
-            <ol class="result-list" aria-label="Top matches"></ol>
-          </div>
-
-          <p class="answer-empty">Your answer will appear here.</p>
-        </div>
-      </section>
-
-      <section class="features" aria-label="About">
-        <div class="feature">
-          <h3>Private by design.</h3>
-          <p>The model runs on your device. Your photos are never uploaded.</p>
-        </div>
-        <div class="feature">
-          <h3>Seriously accurate.</h3>
-          <p>ConvNeXt V2 Base scores about 87% top-1 on the ImageNet benchmark.</p>
-        </div>
-        <div class="feature">
-          <h3>Fast after first use.</h3>
-          <p>The 91 MB model downloads once, then loads from your browser's cache.</p>
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
 
-    <footer class="footer">
-      <p>
-        Model: <a href="https://huggingface.co/facebook/convnextv2-base-22k-224">ConvNeXt V2 Base</a> by Meta AI (Apache-2.0),
-        run with <a href="https://github.com/huggingface/transformers.js">Transformers.js</a>.
-        Recognises the 1,000 ImageNet categories: animals, food, vehicles and everyday objects. It doesn't identify people.
-      </p>
-    </footer>
+    <dialog class="export-dialog" aria-labelledby="export-title">
+      <div class="dialog-head">
+        <h2 id="export-title">Export your model to use it in projects.</h2>
+        <button type="button" class="icon-button" data-action="close-export" aria-label="Close">
+          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>
+        </button>
+      </div>
+      <p class="dialog-tab">Tensorflow.js</p>
+      <p class="dialog-text">Download a zip with <code>model.json</code>, <code>weights.bin</code> and <code>metadata.json</code>. It works anywhere a Teachable Machine image model does.</p>
+      <button type="button" class="blue-button" data-action="download-model">Download my model</button>
+      <p class="dialog-text dialog-text--small">Code snippet to use the model (put the three files in a <code>my_model</code> folder next to the page):</p>
+      <pre class="snippet"><code></code></pre>
+      <button type="button" class="gray-button" data-action="copy-snippet">Copy</button>
+    </dialog>
 
+    <template id="class-template">
+      <article class="card class-card">
+        <div class="class-head">
+          <input class="class-name" aria-label="Class name" spellcheck="false" />
+          <button type="button" class="icon-button icon-button--small" data-cmd="rename" aria-label="Rename class">
+            <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" /></svg>
+          </button>
+          <button type="button" class="icon-button class-menu-button" data-cmd="menu" aria-label="Class options" aria-haspopup="true">
+            <svg viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" /></svg>
+          </button>
+          <div class="menu class-menu" hidden>
+            <button type="button" data-cmd="clear">Remove All Samples</button>
+            <button type="button" data-cmd="delete">Delete Class</button>
+          </div>
+        </div>
+        <div class="class-body">
+          <div class="webcam-panel" hidden>
+            <div class="webcam-panel-head">
+              <span>Webcam</span>
+              <button type="button" class="icon-button icon-button--small" data-cmd="close-webcam" aria-label="Close webcam">
+                <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>
+              </button>
+            </div>
+            <canvas class="webcam-view" width="224" height="224"></canvas>
+            <button type="button" class="record-button" data-cmd="record">Hold to Record</button>
+          </div>
+          <div class="samples">
+            <p class="samples-label">Add Image Samples:</p>
+            <div class="samples-row">
+              <div class="sources">
+                <button type="button" class="source" data-cmd="webcam">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4zM15 16H5V8h10v8z" /></svg>
+                  Webcam
+                </button>
+                <button type="button" class="source" data-cmd="upload">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z" /></svg>
+                  Upload
+                </button>
+              </div>
+              <div class="thumbs"></div>
+            </div>
+            <p class="class-message" role="status" aria-live="polite"></p>
+          </div>
+          <input type="file" class="sample-input" accept="image/*" multiple hidden />
+          <div class="drop-hint" aria-hidden="true">Drop images to add them to this class</div>
+        </div>
+      </article>
+    </template>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js" integrity="sha384-LBtUZzDp17Y7UgB/KFromf1LnY7o5ls8Oxm4vEAoTM0U+JzaadctX2/buQiNHyQU" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js" integrity="sha384-4Q4fzaRr/bPyBiOertaWuZ8Zn987vAWqtNLbL6h+tf/Y+flpirtyqFTd7q9ELxjS" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
     <script type="module" src="js/app.js"></script>
-    <script>
-      // Browsers block module scripts on file:// pages, so say so instead of failing silently.
-      if (location.protocol === 'file:') {
-        const status = document.querySelector('.status');
-        status.textContent = 'Open this page through a web server (see README).';
-        status.dataset.kind = 'error';
-      }
-    </script>
   </body>
 </html>
