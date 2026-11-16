@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Teach your browser to recognise images: add classes, train a model in seconds and test it live, all on your device." />
+    <title>Image Trainer</title>
+    <link rel="icon" href="data:," />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" />
+    <link rel="stylesheet" href="css/image-classifier.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <span class="brand"><span class="brand-mark" aria-hidden="true"></span>Image Trainer</span>
+        <button type="button" class="ghost-button" data-action="new-project">New project</button>
+      </div>
+    </header>
+
+    <main class="app">
+      <section class="intro">
+        <h1>Teach your browser to see.</h1>
+        <p>Show it a few examples of each thing, train a model in seconds, then test it live. Nothing leaves your device.</p>
+      </section>
+
+      <div class="columns">
+        <section class="column" aria-labelledby="step-collect">
+          <div class="step">
+            <span class="step-number">1</span>
+            <h2 id="step-collect">Collect</h2>
+            <span class="step-hint">At least 2 images per class</span>
+          </div>
+          <div class="class-list"></div>
+          <button type="button" class="add-class" data-action="add-class">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            Add a class
+          </button>
+        </section>
+
+        <section class="column" aria-labelledby="step-train">
+          <div class="step">
+            <span class="step-number">2</span>
+            <h2 id="step-train">Train</h2>
+          </div>
+          <div class="panel train-panel">
+            <button type="button" class="primary-button train-button" data-action="train">Train model</button>
+            <div class="train-status" hidden>
+              <div class="progress"><span class="progress-fill"></span></div>
+              <p class="train-detail"></p>
+            </div>
+            <p class="train-message" role="status" aria-live="polite"></p>
+
+            <details class="settings">
+              <summary>
+                Settings
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+              </summary>
+              <div class="setting">
+                <label for="epochs" title="How many times the model studies every sample.">Epochs</label>
+                <div class="stepper">
+                  <button type="button" data-step="epochs:-1" aria-label="Fewer epochs">−</button>
+                  <input id="epochs" type="number" min="1" max="1000" step="1" />
+                  <button type="button" data-step="epochs:1" aria-label="More epochs">+</button>
+                </div>
+              </div>
+              <div class="setting">
+                <label for="batch-size" title="How many samples the model looks at in each training step.">Batch size</label>
+                <select id="batch-size">
+                  <option>16</option><option>32</option><option>64</option><option>128</option><option>256</option><option>512</option>
+                </select>
+              </div>
+              <div class="setting">
+                <label for="learning-rate" title="How big each training adjustment is.">Learning rate</label>
+                <div class="stepper">
+                  <button type="button" data-step="learning-rate:-0.0001" aria-label="Lower learning rate">−</button>
+                  <input id="learning-rate" type="number" min="0.00001" max="1" step="0.0001" />
+                  <button type="button" data-step="learning-rate:0.0001" aria-label="Higher learning rate">+</button>
+                </div>
+              </div>
+              <button type="button" class="text-button" data-action="reset-settings">Reset to defaults</button>
+            </details>
+          </div>
+        </section>
+
+        <section class="column" aria-labelledby="step-test">
+          <div class="step">
+            <span class="step-number">3</span>
+            <h2 id="step-test">Test</h2>
+          </div>
+          <div class="panel preview-panel">
+            <div class="preview-empty">
+              <span class="empty-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+              </span>
+              <p class="empty-title">Nothing to test yet</p>
+              <p class="empty-text">Train a model and try it here with your camera or an image.</p>
+            </div>
+
+            <div class="preview-live" hidden>
+              <div class="segmented" role="radiogroup" aria-label="Test with">
+                <label><input type="radio" name="preview-source" value="webcam" checked /><span>Camera</span></label>
+                <label><input type="radio" name="preview-source" value="file" /><span>Image</span></label>
+              </div>
+              <div class="preview-view">
+                <canvas class="preview-canvas" width="224" height="224"></canvas>
+                <button type="button" class="preview-drop" hidden>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" /></svg>
+                  Choose an image or drop one here
+                </button>
+              </div>
+              <input type="file" class="preview-file" accept="image/*" hidden />
+              <p class="preview-message" role="status" aria-live="polite"></p>
+              <div class="verdict">
+                <span class="verdict-label"></span>
+                <span class="verdict-score"></span>
+              </div>
+              <div class="output"></div>
+            </div>
+
+            <button type="button" class="outline-button" data-action="export" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0l-4-4m4 4l4-4M4 18v1a1 1 0 001 1h14a1 1 0 001-1v-1" /></svg>
+              Export model
+            </button>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <p>Runs on your device with TensorFlow.js and the open-source Teachable Machine image library. <a href="../v1/">Classic layout</a></p>
+    </footer>
+
+    <dialog class="export-dialog" aria-labelledby="export-title">
+      <div class="dialog-head">
+        <h2 id="export-title">Export your model</h2>
+        <button type="button" class="icon-button" data-action="close-export" aria-label="Close">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <p class="dialog-text">A zip with <code>model.json</code>, <code>weights.bin</code> and <code>metadata.json</code>, the same format as a Teachable Machine image export.</p>
+      <button type="button" class="primary-button" data-action="download-model">Download model</button>
+      <div class="snippet-head">
+        <p>Use it on a web page (put the files in a <code>my_model</code> folder):</p>
+        <button type="button" class="text-button" data-action="copy-snippet">Copy</button>
+      </div>
+      <pre class="snippet"><code></code></pre>
+    </dialog>
+
+    <template id="class-template">
+      <article class="class-card">
+        <div class="class-head">
+          <span class="class-dot" aria-hidden="true"></span>
+          <input class="class-name" aria-label="Class name" spellcheck="false" />
+          <span class="class-count">0</span>
+          <button type="button" class="icon-button" data-cmd="menu" aria-label="Class options" aria-haspopup="true">
+            <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+          </button>
+          <div class="menu" hidden>
+            <button type="button" data-cmd="rename">Rename</button>
+            <button type="button" data-cmd="clear">Remove all images</button>
+            <button type="button" data-cmd="delete" class="danger">Delete class</button>
+          </div>
+        </div>
+
+        <div class="camera-panel" hidden>
+          <canvas class="camera-view" width="224" height="224"></canvas>
+          <div class="camera-side">
+            <button type="button" class="record-button"><span class="record-dot" aria-hidden="true"></span><span class="record-label">Hold to record</span></button>
+            <p class="camera-hint">Captures about 24 images a second. Move the object around for variety.</p>
+            <button type="button" class="text-button" data-cmd="close-webcam">Close camera</button>
+          </div>
+        </div>
+
+        <div class="sample-zone">
+          <div class="thumbs"></div>
+          <p class="zone-empty">Drop images here</p>
+        </div>
+
+        <div class="class-actions">
+          <button type="button" class="chip-button" data-cmd="webcam">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 10l4.55-2.28A1 1 0 0121 8.62v6.76a1 1 0 01-1.45.9L15 14M4 6h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2z" /></svg>
+            Camera
+          </button>
+          <button type="button" class="chip-button" data-cmd="upload">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" /></svg>
+            Upload
+          </button>
+        </div>
+        <p class="class-message" role="status" aria-live="polite"></p>
+        <input type="file" class="sample-input" accept="image/*" multiple hidden />
+      </article>
+    </template>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js" integrity="sha384-LBtUZzDp17Y7UgB/KFromf1LnY7o5ls8Oxm4vEAoTM0U+JzaadctX2/buQiNHyQU" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8.5/dist/teachablemachine-image.min.js" integrity="sha384-4Q4fzaRr/bPyBiOertaWuZ8Zn987vAWqtNLbL6h+tf/Y+flpirtyqFTd7q9ELxjS" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

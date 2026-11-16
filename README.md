@@ -8,7 +8,8 @@ Train your own image classifier in the browser, the way Teachable Machine does: 
 
 | Version | Where | Notes |
 | --- | --- | --- |
-| v2 (current) | `/` | Simplified three-step layout (Collect, Train, Test) with light and dark mode. |
+| v3 (current) | `/`, git tag `v3.0` | v2's layout plus animated golden flow wires from the classes to Train to Test. |
+| v2.0 | [`/v2/`](https://transmogrify-cell.github.io/image-classifier/v2/), git tag `v2.0` | Simplified three-step layout (Collect, Train, Test) with light and dark mode, kept as a frozen copy in `v2/`. |
 | v1.0 | [`/v1/`](https://transmogrify-cell.github.io/image-classifier/v1/), git tag `v1.0` | The Teachable Machine-style layout, kept as a frozen copy in `v1/`. |
 
 ## Using it
@@ -52,7 +53,7 @@ Then open <http://localhost:8000>.
 | `js/camera.js` | One shared webcam for recording samples and the preview. |
 | `js/app.js` | Classes, samples, training controls, preview and export dialog. |
 | `css/image-classifier.css` | Styles, with automatic light and dark mode. |
-| `v1/` | Frozen copy of version 1.0. |
+| `v1/`, `v2/` | Frozen copies of versions 1.0 and 2.0. |
 
 ## Credits
 
